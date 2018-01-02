@@ -42,6 +42,7 @@ _MM_malloc_find:
     jge     _MM_malloc_fnd  ; Found a suitable block
     add     X, _MM_MAPLEN   ; Try next mapping
     jmp     _MM_malloc_find
+_MM_malloc_fnd:
     ; Set-up and remove allocation from free
     mov     Y, [X]          ; Get address
     mov     [Y], A          ; Save size for free
@@ -61,7 +62,7 @@ _MM_malloc_copy:
 _MM_malloc_ncln:
     mov     A, Y            ; Move address into A
     add     A, _MM_HDRLEN   ; Skip off hidden allocation header
-_MM_malloc_exit
+_MM_malloc_exit:
     pop     Y               ; Cleanup and return
     pop     X
     ret
