@@ -82,9 +82,9 @@ _MM_free:
     mov     X, _HEAP
 _MM_free_find:
     test    [X], [X]        ; Check if null terminator
-    jz      _MM_free_fnd:
+    jz      _MM_free_fnd
     cmp     [X], Y          ; Check if entry is after block (map->addr >= addr)
-    jle     _MM_free_fnd:
+    jle     _MM_free_fnd
     add     X, _MM_MAPLEN
     jmp     _MM_free_find
 _MM_free_fnd:
@@ -108,7 +108,7 @@ _MM_free_copy1:
     mov     [X+1], [X+3]
     add     X, _MM_MAPLEN
     test    [X+0], [X+0]    ; Did we just copy back the null terminator?
-    jnz     _MM_malloc_copy1 ; If not then copy back
+    jnz     _MM_free_copy1  ; If not then copy back
     jmp     _MM_free_done   ; After merge back we're done
 _MM_free_2:
     ; Will the freed space merge into the next element?
@@ -123,7 +123,7 @@ _MM_free_2:
 _MM_free_3:
     ; Won't merge into adjacent entries, must create new mapping here
     ; Make space in the mapping table
-    sub     SP, _MM_MAPLEN*2 ; Allocate some temp space
+    sub     SP, 4           ; Allocate some temp space
     mov     [SP+0], [X+0]   ; cur element
     mov     [SP+1], [X+1]
     mov     [X+0], A        ; New mapping for freed entry Addr
@@ -139,7 +139,7 @@ _MM_free_copy2:
     add     X, _MM_MAPLEN   ; Move to next mapping
     test    [X+0], [X+0]    ; Did we copy the null terminator forward?
     jnz     _MM_free_copy2
-    add     SP, _MM_MAPLEN*2 ; Free temp space
+    add     SP, 4           ; Free temp space
 _MM_free_done:
     pop     B
     pop     Y
