@@ -1,0 +1,147 @@
+; Classic UNIX style memory allocator
+; Keeps a free list in memory of available chunks.
+
+; Place label _HEAP: at end of code
+
+
+NULL        equ 0x0000
+LAST_ADDR   equ 0xF000      ; Leave 0x1000 words for stack
+MAP_SIZ     equ 64          ; Number of mapping entries in the free map
+_MM_MAPLEN  equ 2           ; Each entry is 2 words long
+_MM_HDRLEN  equ 1           ; Each allocation is precded by its size for free
+
+; Each map entry is [ADDR][SIZE] 
+
+
+_MM_init:
+    mov     X, _HEAP
+    mov     Y, MAP_SIZ
+    add     Y, Y            ; 2 words per entry
+    add     Y, _HEAP        ; Calculate first free address in heap
+    mov     [X+0], Y        ; Store first address
+    mov     A, LAST_ADDR
+    sub     A, Y            ; Size of free space
+    mov     [X+1], A        ; Size of first address
+    mov     [X+2], 0        ; Null terminate map
+    mov     [X+3], 0        
+    ret
+
+; Allocate an arbitrary block of memory.
+; A - size of memory
+; Returns pointer to memory in A, NULL if can't allocate
+_MM_malloc:
+    push    X
+    push    Y
+    add     A, _MM_HDRLEN   ; Allocation needs to include metadata
+    mov     X, _HEAP        ; Start of map table
+_MM_malloc_find:
+    test    [X], [X]        ; Check entry (if addr NULL then end of table)
+    jz      _MM_malloc_fail ; If end of table then no match found
+    mov     Y, [X+1]        ; Read in size
+    cmp     A, Y            ; Compare with needed size
+    jge     _MM_malloc_fnd  ; Found a suitable block
+    add     X, _MM_MAPLEN   ; Try next mapping
+    jmp     _MM_malloc_find
+    ; Set-up and remove allocation from free
+    mov     Y, [X]          ; Get address
+    mov     [Y], A          ; Save size for free
+    add     [X], A          ; map->addr += size
+    sub     [X+1], A        ; map->size -= size
+    test    [X+1], [X+1]    ; Check if we used up all of the allocation
+    jnz     _MM_malloc_ncln ; If not, no need to cleanup entry
+    ; Need to remove this entry from the free map
+    ; Copy every map after this one back one
+_MM_malloc_copy:
+    mov     [X+0], [X+2]
+    mov     [X+1], [X+3]
+    add     X, _MM_MAPLEN
+    test    [X+0], [X+0]    ; Did we just copy back the null terminator?
+    jnz     _MM_malloc_copy ; If not then copy back
+    ; Otherwise we're done
+_MM_malloc_ncln:
+    mov     A, Y            ; Move address into A
+    add     A, _MM_HDRLEN   ; Skip off hidden allocation header
+_MM_malloc_exit
+    pop     Y               ; Cleanup and return
+    pop     X
+    ret
+_MM_malloc_fail:
+    mov     A, NULL
+    jmp     _MM_malloc_exit
+
+; Free an allocated block of memory
+; A - pointer to memory
+_MM_free:
+    push    X
+    push    Y
+    push    B
+    test    A, A            ; Don't free null pointers
+    jz      _MM_free_done
+    sub     A, _MM_HDRLEN   ; Fix address to include header
+    ; Search map for element after this one
+    mov     X, _HEAP
+_MM_free_find:
+    test    [X], [X]        ; Check if null terminator
+    jz      _MM_free_fnd:
+    cmp     [X], Y          ; Check if entry is after block (map->addr >= addr)
+    jle     _MM_free_fnd:
+    add     X, _MM_MAPLEN
+    jmp     _MM_free_find
+_MM_free_fnd:
+    ; Multiple cases here for inserting the space back in table
+    test    X, _HEAP        ; Are we before the beginning of the table?
+    jz      _MM_free_2
+    mov     B, [X-2]        ; Previous addr
+    add     B, [X-1]        ; Previous size
+    test    B, A            ; Would we merge into previous element?
+    jnz     _MM_free_2      ; If not, try next case
+    ; Merge into previous
+    add     [X-1], [A]      ; Add our size onto previous
+    ; Check if we would now merge forward
+    add     B, [A]          ; Address of word after our free'd block
+    test    B, [X+0]        ; Do we hit the next block?
+    jnz     _MM_free_done   ; If not then we're done
+    add     [X-1], [X+1]    ; Merge sizes
+    ; Copy maps backwards over this entry
+_MM_free_copy1:
+    mov     [X+0], [X+2]
+    mov     [X+1], [X+3]
+    add     X, _MM_MAPLEN
+    test    [X+0], [X+0]    ; Did we just copy back the null terminator?
+    jnz     _MM_malloc_copy1 ; If not then copy back
+    jmp     _MM_free_done   ; After merge back we're done
+_MM_free_2:
+    ; Will the freed space merge into the next element?
+    mov     B, A            ; Address
+    add     B, [A]          ; +Size
+    test    B, [X+0]        ; Would we merge forward?
+    jnz     _MM_free_3      ; If not try next case
+    ; Merge forward
+    mov     [X+0], A        ; New starting address
+    add     [X+1], [A]      ; Increase size
+    jmp     _MM_free_done   ; And we're done
+_MM_free_3:
+    ; Won't merge into adjacent entries, must create new mapping here
+    ; Make space in the mapping table
+    sub     SP, _MM_MAPLEN*2 ; Allocate some temp space
+    mov     [SP+0], [X+0]   ; cur element
+    mov     [SP+1], [X+1]
+    mov     [X+0], A        ; New mapping for freed entry Addr
+    mov     [X+1], [A]      ; Size
+;
+_MM_free_copy2:
+    mov     [SP+2], [X+2]   ; Temp copy of next element
+    mov     [SP+3], [X+3]
+    mov     [X+2], [SP+0]   ; Copy forward cur into next element
+    mov     [X+3], [SP+1]
+    mov     [SP+0], [SP+2]  ; Copy temp into cur
+    mov     [SP+1], [SP+3]  
+    add     X, _MM_MAPLEN   ; Move to next mapping
+    test    [X+0], [X+0]    ; Did we copy the null terminator forward?
+    jnz     _MM_free_copy2
+    add     SP, _MM_MAPLEN*2 ; Free temp space
+_MM_free_done:
+    pop     B
+    pop     Y
+    pop     X
+    ret
