@@ -94,13 +94,13 @@ _MM_free_fnd:
     jz      _MM_free_2
     mov     B, [X-2]        ; Previous addr
     add     B, [X-1]        ; Previous size
-    test    B, A            ; Would we merge into previous element?
+    cmp     B, A            ; Would we merge into previous element?
     jnz     _MM_free_2      ; If not, try next case
     ; Merge into previous
     add     [X-1], [A]      ; Add our size onto previous
     ; Check if we would now merge forward
     add     B, [A]          ; Address of word after our free'd block
-    test    B, [X+0]        ; Do we hit the next block?
+    cmp     B, [X+0]        ; Do we hit the next block?
     jnz     _MM_free_done   ; If not then we're done
     add     [X-1], [X+1]    ; Merge sizes
     ; Copy maps backwards over this entry
@@ -115,7 +115,7 @@ _MM_free_2:
     ; Will the freed space merge into the next element?
     mov     B, A            ; Address
     add     B, [A]          ; +Size
-    test    B, [X+0]        ; Would we merge forward?
+    cmp     B, [X+0]        ; Would we merge forward?
     jnz     _MM_free_3      ; If not try next case
     ; Merge forward
     mov     [X+0], A        ; New starting address
